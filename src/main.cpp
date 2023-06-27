@@ -1,8 +1,10 @@
 #include <SPI.h>
 #include <Update.h>
 #include <LoRa.h>
+#include <SSD1306.h>
 
 #define BAND 868E6 // LoRa-Frequenz
+#define VERSION "VERSION V1"
 
 const int csPin = 18;    // LoRa radio chip select
 const int resetPin = 14; // LoRa radio reset
@@ -12,6 +14,7 @@ uint16_t expectedMessageNumber = 0;
 size_t totalBytesRead = 0;
 size_t updateSize = -1;
 bool updateEnd = false;
+SSD1306 display(0x3c, 4, 15);
 // const esp_partition_t *otaPartition;
 
 size_t convertBufferToSize(const uint8_t *buffer, size_t bufferSize)
@@ -56,14 +59,27 @@ void listPartiton(int offset = 0)
   }
 }
 
+void displayStatus(int progress) {
+  display.drawProgressBar(0, 32, 100, 10, progress);
+  display.display();
+}
+
 void setup()
 {
   Serial.begin(9600);
   while (!Serial)
     ;
 
+  pinMode(16, OUTPUT);
+  digitalWrite(16, HIGH);
+  display.init();
+  display.clear();
+  display.setFont(ArialMT_Plain_16);
+  display.drawString(0, 0, VERSION);
+  display.display();
+
   LoRa.setPins(csPin, resetPin, irqPin);
-  Serial.println("LoRa Receiver v2");
+  Serial.println(VERSION);
 
   if (!LoRa.begin(BAND))
   {
@@ -73,7 +89,7 @@ void setup()
   }
   Serial.println("Init.");
   // otaPartition = esp_partition_find_first(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, "otadata");
-  listPartiton();
+  // listPartiton();
 }
 
 void loop()
@@ -113,7 +129,9 @@ void loop()
         // Serial.print("messageNumber: ");
         // Serial.println(messageNumber);
         Serial.print("Percent: ");
-        Serial.println(((float)totalBytesRead / (float)updateSize) * 100);
+        float progress = ((float)totalBytesRead / (float)updateSize) * 100;
+        Serial.println(progress);
+        displayStatus((int)progress);
 
         if (messageNumber == 20 || messageNumber == 40)
         {
@@ -154,6 +172,7 @@ void loop()
 #include <SPI.h>
 #include <LoRa.h>
 #include "SPIFFS.h"
+#include <SSD1306.h>
 
 #define LORA_CHUNK_SIZE 253
 #define ACK_TIMEOUT 1000
@@ -165,9 +184,10 @@ const int loraDI0 = 26;
 const int loraBAND = 868E6;
 
 bool once = true;
+SSD1306 display(0x3c, 4, 15);
 
 // Method to send a message and wait for acknowledgment
-bool sendMessageAndWaitForAck(uint16_t messageNumber, const uint8_t* data, size_t dataSize)
+bool sendMessageAndWaitForAck(uint16_t messageNumber, const uint8_t *data, size_t dataSize)
 {
   bool ackReceived = false; // Track if an acknowledgment is received
   uint8_t retryCount = 0;   // Track the number of retries
@@ -228,7 +248,7 @@ void sendFirmwareUpdate()
   size_t firmwareSize = firmwareFile.size();
 
   // Send the first message with firmware size
-  if (!sendMessageAndWaitForAck(messageNumber, (uint8_t*)&firmwareSize, sizeof(firmwareSize)))
+  if (!sendMessageAndWaitForAck(messageNumber, (uint8_t *)&firmwareSize, sizeof(firmwareSize)))
   {
     Serial.println("No acknowledgment received for the first message. Aborting firmware transfer.");
     firmwareFile.close();
@@ -253,6 +273,11 @@ void sendFirmwareUpdate()
       Serial.print("Sent ");
       Serial.print(totalBytesSent);
       Serial.print(" bytes of firmware");
+      int progress = (int)((float)totalBytesSent / (float)firmwareSize * 100);
+
+      display.drawString(0, 0, "Sending update");
+      display.drawProgressBar(0, 32, 100, 10, progress);
+      display.display();
     }
     else
     {
@@ -266,14 +291,25 @@ void sendFirmwareUpdate()
   // Close the firmware file
   firmwareFile.close();
 
+  display.clear();
+  display.setFont(ArialMT_Plain_16);
+  display.drawString(0, 0, "Send finished");
+  display.display();
+
   Serial.println("Firmware transfer complete");
 }
-
 
 void setup()
 {
   SPIFFS.begin();
   Serial.begin(9600);
+
+  pinMode(16, OUTPUT);
+  digitalWrite(16, HIGH);
+  display.init();
+  display.flipScreenVertically();
+  display.clear();
+  display.setFont(ArialMT_Plain_16);
 
   LoRa.setPins(loraCS, loraRST, loraDI0);
   if (!LoRa.begin(loraBAND))
@@ -291,6 +327,8 @@ void loop()
   {
     once = false;
     sendFirmwareUpdate();
+    display.drawString(0, 0, "Sending update");
+    display.display();
   }
   if (LoRa.parsePacket())
   {
