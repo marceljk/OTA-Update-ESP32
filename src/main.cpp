@@ -1,3 +1,4 @@
+/* Receiver */
 #include <SPI.h>
 #include <Update.h>
 #include <LoRa.h>
@@ -168,6 +169,7 @@ void loop()
   }
 }
 
+/* Sender */
 /*
 #include <SPI.h>
 #include <LoRa.h>
